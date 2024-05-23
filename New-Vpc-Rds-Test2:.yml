@@ -1,0 +1,195 @@
+Parameters:
+  DBInstanceClass:
+    Description: DB instance class
+    Type: String
+    Default: db.t3.micro
+
+  VPCCidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PrivateSB1Cidr:
+      Type: String
+      Default: 10.0.1.128/28
+
+  PrivateSB2Cidr:
+      Type: String
+      Default: 10.0.1.144/28
+
+  PrivateSubnet1AZ:
+      Type: String
+      Default: us-east-1a
+    
+  PrivateSubnet2AZ:
+      Type: String
+      Default: us-east-1b
+
+  SGName:
+      Type: String
+      Default: "MySecurityGroup"
+
+  DBEngine:
+      Type: String
+      Default: mysql
+
+  DBMasterUsername:
+      Type: String
+      Default: admin
+  
+  DBMasterUserPassword:
+      Type: String
+      Default: GB!WXV68c7hDSGm!
+  
+  DBName:
+      Type: String
+      Default: MyDatabase
+
+  DBBackupPeriod:
+      Type: Number
+      Default: 7
+
+  DBStorageSize:
+      Type: String
+      Default: 20
+  
+  KMSKeyID:
+      Type: String
+      Default: alias/aws/rds
+
+
+Resources:
+  AWSVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      Tags:
+        - Key: Name
+          Value: CFTVPC1
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+          - Key: Name
+            Value: IG1
+
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref AWSVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Ref PrivateSubnet1AZ
+      CidrBlock: !Ref PrivateSB1Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PS1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AWSVPC
+      AvailabilityZone: !Ref PrivateSubnet2AZ
+      CidrBlock: !Ref PrivateSB2Cidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PS12
+          
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupName: !Ref SGName
+      GroupDescription: "Security group with no ingress rule"
+      VpcId: !Ref AWSVPC
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: MyRDSDBSybnetGroup
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: RDSSBG
+
+  DBSecurityGroup:
+    Type: AWS::RDS::DBSecurityGroup
+    Properties:
+      DBSecurityGroupIngress:
+        - CIDRIP: 0.0.0.0/0
+      EC2VpcId: !Ref AWSVPC
+      GroupDescription: For RDS
+      Tags:
+        - Key: Name
+          Value: RDSDBSG
+          
+  NatPublicIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: NATEIP1
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    DependsOn: NatPublicIP
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      AllocationId: !GetAtt NatPublicIP.AllocationId
+      Tags:
+        - Key: Name
+          Value: NG1
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AWSVPC
+      Tags:
+        - Key: Name
+          Value: PRT1
+
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      NatGatewayId: !Ref NatGateway
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: !Ref DBEngine
+      MasterUsername: !Ref DBMasterUsername
+      MasterUserPassword: DBMasterUserPassword
+      DBInstanceClass: !Ref DBInstanceClass
+      DBName: !Ref DBName
+      BackupRetentionPeriod: !Ref DBBackupPeriod
+      VPCSecurityGroups:
+        - !Ref MySecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      AllocatedStorage: !Ref DBStorageSize
+      KmsKeyId: !Ref KMSKeyID
+      StorageEncrypted: true
+      Tags: 
+        - Key: Name
+          Value: MyRDSInstance
